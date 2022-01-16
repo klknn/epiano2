@@ -1,0 +1,87 @@
+{
+    "name": "epiano2",
+    "description": "Electric piano plugin",
+    "authors": ["klknn"],
+    "copyright": "Copyright © 2022, klknn",
+    "stringImportPaths": ["."],
+    "license": "MIT, GPL v2 or any later version",
+    "targetType": "dynamicLibrary",
+
+    "dependencies": {
+        "dplug:flat-widgets": "~>12.3.1",
+        "dplug:pbr-widgets": "~>12.3.1",
+    },
+
+    "dflags-linux-dmd": ["-defaultlib=libphobos2.a"],
+    "dflags-linux-ldc": ["-link-defaultlib-shared=false"],
+    "dflags-linux-x86_64-ldc": ["-fvisibility=hidden"],
+    "dflags-windows-ldc": ["-mscrtlib=libcmt","-fvisibility=hidden", "-link-defaultlib-shared=false"],
+
+    "buildTypes":
+    {
+        "unittest-opt":
+        {
+            "buildOptions": ["unittests", "optimize", "inline"]
+        },
+        "unittest-native":
+        {
+            "buildOptions": ["unittests", "optimize", "inline"],
+            "dflags-ldc": ["-mcpu=native"]
+        },
+        "release-native":
+        {
+            "buildOptions": ["releaseMode", "optimize", "inline", "noBoundsCheck"],
+            "dflags-ldc": ["-mcpu=native"]
+        }
+    },
+
+    "configurations": [
+        {
+            "name": "LV2",
+            "targetType": "dynamicLibrary",
+            "versions": [
+                "LV2"
+            ],
+            "dependencies": {
+                "dplug:lv2": "~>12.3.1"
+            },
+            "lflags-osx-x86_64-ldc": [ "-exported_symbols_list", "resource/module-lv2.lst", "-dead_strip" ],
+            "lflags-osx-arm64-ldc": [ "-exported_symbols_list", "resource/module-lv2.lst" ],
+            "lflags-linux-ldc": [ "--version-script=resource/module-lv2.ver" ],
+        },
+        {
+            "name": "VST2",
+            "targetType": "dynamicLibrary",
+            "versions": [
+                "VST2"
+            ],
+            "dependencies": {
+                "dplug:vst2": "~>12.3.1"
+            },
+            "lflags-osx-ldc": [ "-exported_symbols_list", "resource/module-vst.lst", "-dead_strip" ],
+            "lflags-linux-ldc": [ "--version-script=resource/module-vst.ver" ]
+        },
+        {
+            "name": "VST3",
+            "targetType": "dynamicLibrary",
+            "versions": [
+                "VST3"
+            ],
+            "dependencies": {
+                "dplug:vst3": "~>12.3.1"
+            },
+            "lflags-osx-ldc": [ "-exported_symbols_list", "resource/module-vst3.lst", "-dead_strip" ],
+            "lflags-linux-ldc": [ "--version-script=resource/module-vst3.ver" ]
+        },
+        {
+            "name": "AU",
+            "versions": ["AU"],
+            "targetType": "dynamicLibrary",
+            "dependencies": {
+                "dplug:au": "~>12.3.1"
+            },
+            "lflags-osx-x86_64-ldc": [ "-exported_symbols_list", "resource/module-au.lst", "-dead_strip" ],
+            "lflags-osx-arm64-ldc": [ "-exported_symbols_list", "resource/module-au.lst" ]
+        },
+    ],
+}

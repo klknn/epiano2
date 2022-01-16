@@ -1,0 +1,15 @@
+*
+
+!*/
+!*.d
+!*.md
+!*.ver
+!*.lst
+
+!LICENSE
+!dub.json
+!plugin.json
+!.gitignore
+
+.dub
+builds
