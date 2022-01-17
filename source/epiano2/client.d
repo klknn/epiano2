@@ -7,6 +7,7 @@ License:   MIT, GPL v2 or any later version (See LICENSE).
 module epiano2.client;
 
 import std.math;
+import std.algorithm;
 import dplug.core, dplug.client;
 import epiano2.data : epianoData;
 import epiano2.parameter : ModParameter;
@@ -16,18 +17,18 @@ import epiano2.parameter : ModParameter;
 mixin(pluginEntryPoints!Epiano2Client);
 
 enum Param : int {
-  envelopeDecay,
-  envelopeRelease,
-  hardness,
-  trebleBoost,
-  modulation,
-  lfoRate,
-  velocitySense,
-  stereoWidth,
-  polyPhony,
-  fineTuning,
-  randomTuning,
-  overdrive,
+  envelopeDecay = 0,
+  envelopeRelease = 1,
+  hardness = 2,
+  trebleBoost = 3,
+  modulation = 4,
+  lfoRate = 5, // see resume() to get unnormalized val
+  velocitySense = 6,
+  stereoWidth = 7,
+  polyphony = 8,
+  fineTuning = 9,
+  randomTuning = 10,
+  overdrive = 11,
 }
 
 struct Voice {
@@ -43,12 +44,12 @@ struct Voice {
   float dec = 0.99f;  // all notes off.
 
   // First-order LPF.
-  float f0;
-  float f1;
-  float ff;
+  float f0 = 0;
+  float f1 = 0;
+  float ff = 0;
 
-  float outL;
-  float outR;
+  float outl = 0;
+  float outr = 0;
   int note;
 }
 
@@ -75,54 +76,54 @@ class Epiano2Client : Client {
     auto params = makeVec!Parameter();
 
     params ~= mallocNew!IntegerParameter(
-        /*index=*/Param.envelopeDecay, /*name=*/"Envelope Decay", /*label=*/"",
+        /*index=*/Param.envelopeDecay, /*name=*/"Envelope Decay", /*label=*/"%",
         /*min=*/0, /*max=*/100, /*defaultValue=*/50);
 
     params ~= mallocNew!IntegerParameter(
         /*index=*/Param.envelopeRelease, /*name=*/"Envelope Release",
-        /*label=*/"",
+        /*label=*/"%",
         /*min=*/0, /*max=*/100, /*defaultValue=*/50);
 
     params ~= mallocNew!IntegerParameter(
         /*index=*/Param.hardness, /*name=*/"Hardness",
-        /*label=*/"",
+        /*label=*/"%",
         /*min=*/-50, /*max=*/50, /*defaultValue=*/0);
 
     params ~= mallocNew!IntegerParameter(
-        /*index=*/Param.trebleBoost, /*name=*/"Treble Boost", /*label=*/"",
+        /*index=*/Param.trebleBoost, /*name=*/"Treble Boost", /*label=*/"%",
         /*min=*/-50, /*max=*/50, /*defaultValue=*/0);
 
     params ~= mallocNew!ModParameter(
-        /*index=*/Param.modulation, /*name=*/"Modulation", /*label=*/"",
+        /*index=*/Param.modulation, /*name=*/"Modulation", /*label=*/"%",
         /*min=*/-100, /*max=*/100, /*defaultValue=*/0);
 
     params ~= mallocNew!LinearFloatParameter(
-        /*index=*/Param.lfoRate, /*name=*/"LFO rate", "",
+        /*index=*/Param.lfoRate, /*name=*/"LFO rate", "Hz",
         /*min=*/0.07, /*max=*/36.97, /*defaultValue=*/4.19);
 
     params ~= mallocNew!IntegerParameter(
-        /*index=*/Param.velocitySense, /*name=*/"Velocity Sense", /*label=*/"",
+        /*index=*/Param.velocitySense, /*name=*/"Velocity Sense", /*label=*/"%",
         /*min=*/0, /*max=*/100, /*defaultValue=*/25);
 
     params ~= mallocNew!IntegerParameter(
-        /*index=*/Param.stereoWidth, /*name=*/"Stereo Width", /*label=*/"",
+        /*index=*/Param.stereoWidth, /*name=*/"Stereo Width", /*label=*/"%",
         /*min=*/0, /*max=*/200, /*defaultValue=*/100);
 
     params ~= mallocNew!IntegerParameter(
-        /*index=*/Param.polyPhony, /*name=*/"Polyphony", /*label=*/"",
+        /*index=*/Param.polyphony, /*name=*/"Polyphony", /*label=*/"voices",
         /*min=*/0, /*max=*/32, /*defaultValue=*/16);
 
     params ~= mallocNew!IntegerParameter(
         /*index=*/Param.fineTuning, /*name=*/"Fine Tuning",
-        /*label=*/"",
+        /*label=*/"cents",
         /*min=*/-50, /*max=*/50, /*defaultValue=*/0);
 
     params ~= mallocNew!LinearFloatParameter(
-        /*index=*/Param.randomTuning, /*name=*/"Random Tuning", "",
+        /*index=*/Param.randomTuning, /*name=*/"Random Tuning", "cents",
         /*min=*/0.0, /*max=*/50.0, /*defaultValue=*/1.1);
 
     params ~= mallocNew!LinearFloatParameter(
-        /*index=*/Param.overdrive, /*name=*/"Overdrive", "",
+        /*index=*/Param.overdrive, /*name=*/"Overdrive", "%",
         /*min=*/0.0, /*max=*/100.0, /*defaultValue=*/0.0);
 
     return params.releaseData();
@@ -130,119 +131,300 @@ class Epiano2Client : Client {
 
   override LegalIO[] buildLegalIO() const {
     auto io = makeVec!LegalIO();
-    io ~= LegalIO(/*numInputChannels=*/0, /*numOutputChannels*/1);
+    // TODO: io ~= LegalIO(/*numInputChannels=*/0, /*numOutputChannels*/1);
     io ~= LegalIO(/*numInputChannels=*/0, /*numOutputChannels*/2);
     return io.releaseData();
   }
 
   override void reset(
       double sampleRate, int maxFrames, int numInputs, int numOutputs) {
-    _sampleRate = sampleRate;
+    Fs = sampleRate;
+    iFs = 1f / sampleRate;
+  }
+
+  void noteOn(int note, int velocity) {
+    float l = 99.0f;
+    int v, vl=0, k, s;
+
+    if(velocity > 0)
+    {
+      if(activevoices < poly) //add a note
+      {
+        vl = activevoices;
+        activevoices++;
+        voice[vl].f0 = voice[vl].f1 = 0.0f;
+      }
+      else //steal a note
+      {
+        for(v=0; v<poly; v++)  //find quietest voice
+        {
+          if(voice[v].env < l) { l = voice[v].env;  vl = v; }
+        }
+      }
+      // debugLogf("noteOn using voice %d", vl);
+
+      k = (note - 60) * (note - 60);
+      l = fine + random * (cast(float)(k % 13) - 6.5f);  //random & fine tune
+      if(note > 60) l += stretch * cast(float)k; //stretch
+
+      s = size;
+      //if(velocity > 40) s += (VstInt32)(sizevel * (float)(velocity - 40));  - no velocity to hardness in ePiano
+
+      k = 0;
+      while(note > (kgrp[k].high + s)) {
+        k += 3;  //find keygroup
+        // debugLogf("noteOn using note %d  kgrp %d high %d", note, k, kgrp[k].high);
+      }
+      l += cast(float)(note - kgrp[k].root); //pitch
+      l = 32000.0f * iFs * cast(float)exp(0.05776226505 * l);
+      voice[vl].delta = cast(int)(65536.0f * l);
+      voice[vl].frac = 0;
+
+      if(velocity > 48) k++; //mid velocity sample
+      if(velocity > 80) k++; //high velocity sample
+      voice[vl].pos = kgrp[k].pos;
+      voice[vl].end = kgrp[k].end - 1;
+      voice[vl].loop = kgrp[k].loop;
+
+      voice[vl].env = (3.0f + 2.0f * velsens) * cast(float)pow(0.0078f * velocity, velsens); //velocity
+
+      if(note > 60) voice[vl].env *= cast(float)exp(0.01f * cast(float)(60 - note)); //new! high notes quieter
+
+      // TODO
+      auto modulation = 0;
+      l = 50.0f + modulation * modulation * muff + muffvel * cast(float)(velocity - 64); //muffle
+      if(l < (55.0f + 0.4f * cast(float)note)) l = 55.0f + 0.4f * cast(float)note;
+      if(l > 210.0f) l = 210.0f;
+      voice[vl].ff = l * l * iFs;
+
+      voice[vl].note = note; //note->pan
+      if(note <  12) note = 12;
+      if(note > 108) note = 108;
+      l = volume;
+      voice[vl].outr = l + l * width * cast(float)(note - 60);
+      voice[vl].outl = l + l - voice[vl].outr;
+
+      if(note < 44) note = 44; //limit max decay length
+      // TODO
+      auto decay = 0.5f;
+      voice[vl].dec = cast(float)exp(-iFs * exp(-1.0 + 0.03 * cast(double)note - 2.0f * decay));
+    }
+    else //note off
+    {
+      for(v=0; v<NVOICES; v++)
+        if(voice[v].note==note) //any voices playing that note?
+        {
+          if(sustain==0)
+          {
+            // TODO
+            auto release = 0f;
+            voice[v].dec = cast(float)exp(-iFs * exp(6.0 + 0.01 * cast(double)note - 5.0 * release));
+          }
+          else voice[v].note = SUSTAIN;
+        }
+    }
+  }
+
+  override int maxFramesInProcess() nothrow @nogc
+  {
+    return EVENTBUFFER; // default returns 0 which means "do not split"
+  }
+
+
+  private void processMidi(int frames) {
+    // debugLogf("processMidi: %d frames", frames);
+    int npos = 0;
+    foreach (MidiMessage msg; getNextMidiMessages(frames)) {
+      if (msg.isNoteOn) {
+        notes[npos++] = msg.offset;
+        notes[npos++] = msg.noteNumber;
+        notes[npos++] = msg.noteVelocity;
+        // noteOn(msg.noteNumber, msg.noteVelocity);
+      } else if (msg.isNoteOff) {
+        notes[npos++] = msg.offset;
+        notes[npos++] = msg.noteNumber;
+        notes[npos++] = 0;
+        // noteOn(msg.noteNumber, 0);
+      }
+      else if (msg.isAllNotesOff || msg.isAllSoundsOff) {
+        for(int v=0; v<NVOICES; v++) voice[v].dec=0.99f;
+        sustain = 0;
+        muff = 160.0f;
+      }
+      if (npos > EVENTBUFFER)  npos -= 3; // discard events if buffer full
+    }
+    notes[npos] = EVENTS_DONE;
   }
 
   override void processAudio(
-      const(float*)[] inputs, float*[] outputs, int frames, TimeInfo info) {
-    // process MIDI - note on/off and similar
-    foreach (MidiMessage msg; getNextMidiMessages(frames)) {
-      // if (msg.isNoteOn) _synth.markNoteOn(msg.noteNumber());
-      // else if (msg.isNoteOff) _synth.markNoteOff(msg.noteNumber());
-      // else if (msg.isAllNotesOff || msg.isAllSoundsOff)
-      //   _synth.markAllNotesOff();
+      const(float*)[] inputs, float*[] outputs, int sampleFrames, TimeInfo info) {
+    int index;
+    int event=0, frame=0, v;
+    float x=0, l=0, r =0, od=overdrive;
+    int i;
+
+    processMidi(sampleFrames);
+
+    while(frame<sampleFrames)
+    {
+      // debugLogf("event %d frame %d", event, frame);
+      auto frames = notes[event++];
+      if(frames>sampleFrames) frames = sampleFrames;
+      frames -= frame;
+      frame += frames;
+
+      while(--frames>=0)
+      {
+        Voice* V = voice.ptr;
+        l = r = 0.0f;
+
+        for(v=0; v<activevoices; v++)
+        {
+          V.frac += V.delta;  //integer-based linear interpolation
+          V.pos += V.frac >> 16;
+          V.frac &= 0xFFFF;
+          if(V.pos > V.end) V.pos -= V.loop;
+          i = waves[V.pos];
+          i = (i << 7) + (V.frac >> 9) * (waves[V.pos + 1] - i) + 0x40400000;
+          x = V.env * (*cast(float *)&i - 3.0f);  //fast int.float
+          // debugLogf("x %f env %f i %d wav %d", x, V.env, i, waves[V.pos + 1]);
+          V.env = V.env * V.dec;  //envelope
+
+          if(x>0.0f) { x -= od * x * x;  if(x < -V.env) x = -V.env; } //+= 0.5f * x * x; } //overdrive
+
+          l += V.outl * x;
+          r += V.outr * x;
+
+          V++;
+        }
+        // TODO
+        // tl += tfrq * (l - tl);  //treble boost
+        // tr += tfrq * (r - tr);
+        // r  += treb * (r - tr);
+        // l  += treb * (l - tl);
+        // lfo0 += dlfo * lfo1;  //LFO for tremolo and autopan
+        // lfo1 -= dlfo * lfo0;
+        // l += l * lmod * lfo1;
+        // r += r * rmod * lfo1;  //worth making all these local variables?
+
+        // *out0++ += x;
+        // *out1++ += x;
+        outputs[0][index] = l;
+        outputs[1][index] = r;
+        ++index;
+      }
+      // debugLogf("out %f %f ... %f %f", outputs[0][0], outputs[1][0],
+      // outputs[0][sampleFrames-1], outputs[1][sampleFrames-1]);
+
+      if(frame<sampleFrames)
+      {
+        // if(activevoices == 0 && programs[curProgram].param[4] > 0.5f)
+        // { lfo0 = -0.7071f;  lfo1 = 0.7071f; } //reset LFO phase - good idea?
+        int note = notes[event++];
+        int vel  = notes[event++];
+        // debugLogf("note %d vel %d", note, vel);
+        noteOn(note, vel);
+      }
     }
+    if(fabs(tl)<1.0e-10) tl = 0.0f; //anti-denormal
+    if(fabs(tr)<1.0e-10) tr = 0.0f;
 
-    // foreach (ref sample; outputs[0][0 .. frames])
-    //   sample = _synth.nextSample();
-    outputs[0][0 .. frames] = 0f;
-    outputs[1][0 .. frames] = 0f;
-
-    // Copy output to every channel
-    // foreach (chan; 1 .. outputs.length)
-    //   outputs[chan][0 .. frames] = outputs[0][0 .. frames];
+    for(v=0; v<activevoices; v++) if(voice[v].env < SILENCE) voice[v] = voice[--activevoices];
+    notes[0] = EVENTS_DONE;  //mark events buffer as done
   }
 
-  void readAllParams() {}
-
  private:
+  float Fs, iFs;
+
+  enum EVENTBUFFER = 1024;
+  enum EVENTS_DONE = 99999999;
+  //list of delta|note|velocity for current block
+  int[EVENTBUFFER + 8] notes = [EVENTS_DONE];
 
   // Global internal variables
-  shared static immutable KeyGroup[34] keyGroups;
-  shared static immutable short[epianoData.length] waves;
+  KeyGroup[34] kgrp;
+  short[epianoData.length] waves;
 
-  enum EVENTBUFFER = 120;
-  enum EVENTS_DONE = 99999999;
-  int[EVENTBUFFER + 8] notes_ = [EVENTS_DONE];
-  Voice[32] _voices;
-  float _sampleRate = 44100;
-  float _volume = 0.2;
-  float _muff = 160; // What is this?
-  int _size;
-  int _sustain;
-  int _activeVoices;
+  enum SILENCE = 0.0001f;
+  enum SUSTAIN = 128;
+  enum NVOICES = 32;
+  Voice[NVOICES] voice;
 
-  float tl = 0;
-  float tr = 0;
-  float lfo0 = 0;
-  float dlfo = 0;
-  float lfo1 = 1;
+  int  activevoices = 0, poly = 16;
+  float width = 0;
+  int  size, sustain = 0;
+  float lfo0 = 0, lfo1 = 1, dlfo = 0, lmod = 0, rmod = 0;
+  float treb = 0, tfrq = 0.5, tl = 0, tr = 0;
+  float tune = 0, fine = 0, random = 0, stretch = 0, overdrive = 0;
+  float muff = 160, muffvel = 0, sizevel, velsens = 1, volume = 0.5, modwhl = 0;
 
-  shared static this() {
+ public:
+  this() {
+    super();
     //Waveform data and keymapping
-    keyGroups[ 0].root = 36;  keyGroups[ 0].high = 39; //C1
-    keyGroups[ 3].root = 43;  keyGroups[ 3].high = 45; //G1
-    keyGroups[ 6].root = 48;  keyGroups[ 6].high = 51; //C2
-    keyGroups[ 9].root = 55;  keyGroups[ 9].high = 57; //G2
-    keyGroups[12].root = 60;  keyGroups[12].high = 63; //C3
-    keyGroups[15].root = 67;  keyGroups[15].high = 69; //G3
-    keyGroups[18].root = 72;  keyGroups[18].high = 75; //C4
-    keyGroups[21].root = 79;  keyGroups[21].high = 81; //G4
-    keyGroups[24].root = 84;  keyGroups[24].high = 87; //C5
-    keyGroups[27].root = 91;  keyGroups[27].high = 93; //G5
-    keyGroups[30].root = 96;  keyGroups[30].high =999; //C6
+    kgrp[ 0].root = 36;  kgrp[ 0].high = 39; //C1
+    kgrp[ 3].root = 43;  kgrp[ 3].high = 45; //G1
+    kgrp[ 6].root = 48;  kgrp[ 6].high = 51; //C2
+    kgrp[ 9].root = 55;  kgrp[ 9].high = 57; //G2
+    kgrp[12].root = 60;  kgrp[12].high = 63; //C3
+    kgrp[15].root = 67;  kgrp[15].high = 69; //G3
+    kgrp[18].root = 72;  kgrp[18].high = 75; //C4
+    kgrp[21].root = 79;  kgrp[21].high = 81; //G4
+    kgrp[24].root = 84;  kgrp[24].high = 87; //C5
+    kgrp[27].root = 91;  kgrp[27].high = 93; //G5
+    kgrp[30].root = 96;  kgrp[30].high =999; //C6
 
-    keyGroups[0].pos = 0;        keyGroups[0].end = 8476;     keyGroups[0].loop = 4400;
-    keyGroups[1].pos = 8477;     keyGroups[1].end = 16248;    keyGroups[1].loop = 4903;
-    keyGroups[2].pos = 16249;    keyGroups[2].end = 34565;    keyGroups[2].loop = 6398;
-    keyGroups[3].pos = 34566;    keyGroups[3].end = 41384;    keyGroups[3].loop = 3938;
-    keyGroups[4].pos = 41385;    keyGroups[4].end = 45760;    keyGroups[4].loop = 1633; //was 1636;
-    keyGroups[5].pos = 45761;    keyGroups[5].end = 65211;    keyGroups[5].loop = 5245;
-    keyGroups[6].pos = 65212;    keyGroups[6].end = 72897;    keyGroups[6].loop = 2937;
-    keyGroups[7].pos = 72898;    keyGroups[7].end = 78626;    keyGroups[7].loop = 2203; //was 2204;
-    keyGroups[8].pos = 78627;    keyGroups[8].end = 100387;   keyGroups[8].loop = 6368;
-    keyGroups[9].pos = 100388;   keyGroups[9].end = 116297;   keyGroups[9].loop = 10452;
-    keyGroups[10].pos = 116298;  keyGroups[10].end = 127661;  keyGroups[10].loop = 5217; //was 5220;
-    keyGroups[11].pos = 127662;  keyGroups[11].end = 144113;  keyGroups[11].loop = 3099;
-    keyGroups[12].pos = 144114;  keyGroups[12].end = 152863;  keyGroups[12].loop = 4284;
-    keyGroups[13].pos = 152864;  keyGroups[13].end = 173107;  keyGroups[13].loop = 3916;
-    keyGroups[14].pos = 173108;  keyGroups[14].end = 192734;  keyGroups[14].loop = 2937;
-    keyGroups[15].pos = 192735;  keyGroups[15].end = 204598;  keyGroups[15].loop = 4732;
-    keyGroups[16].pos = 204599;  keyGroups[16].end = 218995;  keyGroups[16].loop = 4733;
-    keyGroups[17].pos = 218996;  keyGroups[17].end = 233801;  keyGroups[17].loop = 2285;
-    keyGroups[18].pos = 233802;  keyGroups[18].end = 248011;  keyGroups[18].loop = 4098;
-    keyGroups[19].pos = 248012;  keyGroups[19].end = 265287;  keyGroups[19].loop = 4099;
-    keyGroups[20].pos = 265288;  keyGroups[20].end = 282255;  keyGroups[20].loop = 3609;
-    keyGroups[21].pos = 282256;  keyGroups[21].end = 293776;  keyGroups[21].loop = 2446;
-    keyGroups[22].pos = 293777;  keyGroups[22].end = 312566;  keyGroups[22].loop = 6278;
-    keyGroups[23].pos = 312567;  keyGroups[23].end = 330200;  keyGroups[23].loop = 2283;
-    keyGroups[24].pos = 330201;  keyGroups[24].end = 348889;  keyGroups[24].loop = 2689;
-    keyGroups[25].pos = 348890;  keyGroups[25].end = 365675;  keyGroups[25].loop = 4370;
-    keyGroups[26].pos = 365676;  keyGroups[26].end = 383661;  keyGroups[26].loop = 5225;
-    keyGroups[27].pos = 383662;  keyGroups[27].end = 393372;  keyGroups[27].loop = 2811;
-    keyGroups[28].pos = 383662;  keyGroups[28].end = 393372;  keyGroups[28].loop = 2811; //ghost
-    keyGroups[29].pos = 393373;  keyGroups[29].end = 406045;  keyGroups[29].loop = 4522;
-    keyGroups[30].pos = 406046;  keyGroups[30].end = 414486;  keyGroups[30].loop = 2306;
-    keyGroups[31].pos = 406046;  keyGroups[31].end = 414486;  keyGroups[31].loop = 2306; //ghost
-    keyGroups[32].pos = 414487;  keyGroups[32].end = 422408;  keyGroups[32].loop = 2169;
+    kgrp[0].pos = 0;        kgrp[0].end = 8476;     kgrp[0].loop = 4400;
+    kgrp[1].pos = 8477;     kgrp[1].end = 16248;    kgrp[1].loop = 4903;
+    kgrp[2].pos = 16249;    kgrp[2].end = 34565;    kgrp[2].loop = 6398;
+    kgrp[3].pos = 34566;    kgrp[3].end = 41384;    kgrp[3].loop = 3938;
+    kgrp[4].pos = 41385;    kgrp[4].end = 45760;    kgrp[4].loop = 1633; //was 1636;
+    kgrp[5].pos = 45761;    kgrp[5].end = 65211;    kgrp[5].loop = 5245;
+    kgrp[6].pos = 65212;    kgrp[6].end = 72897;    kgrp[6].loop = 2937;
+    kgrp[7].pos = 72898;    kgrp[7].end = 78626;    kgrp[7].loop = 2203; //was 2204;
+    kgrp[8].pos = 78627;    kgrp[8].end = 100387;   kgrp[8].loop = 6368;
+    kgrp[9].pos = 100388;   kgrp[9].end = 116297;   kgrp[9].loop = 10452;
+    kgrp[10].pos = 116298;  kgrp[10].end = 127661;  kgrp[10].loop = 5217; //was 5220;
+    kgrp[11].pos = 127662;  kgrp[11].end = 144113;  kgrp[11].loop = 3099;
+    kgrp[12].pos = 144114;  kgrp[12].end = 152863;  kgrp[12].loop = 4284;
+    kgrp[13].pos = 152864;  kgrp[13].end = 173107;  kgrp[13].loop = 3916;
+    kgrp[14].pos = 173108;  kgrp[14].end = 192734;  kgrp[14].loop = 2937;
+    kgrp[15].pos = 192735;  kgrp[15].end = 204598;  kgrp[15].loop = 4732;
+    kgrp[16].pos = 204599;  kgrp[16].end = 218995;  kgrp[16].loop = 4733;
+    kgrp[17].pos = 218996;  kgrp[17].end = 233801;  kgrp[17].loop = 2285;
+    kgrp[18].pos = 233802;  kgrp[18].end = 248011;  kgrp[18].loop = 4098;
+    kgrp[19].pos = 248012;  kgrp[19].end = 265287;  kgrp[19].loop = 4099;
+    kgrp[20].pos = 265288;  kgrp[20].end = 282255;  kgrp[20].loop = 3609;
+    kgrp[21].pos = 282256;  kgrp[21].end = 293776;  kgrp[21].loop = 2446;
+    kgrp[22].pos = 293777;  kgrp[22].end = 312566;  kgrp[22].loop = 6278;
+    kgrp[23].pos = 312567;  kgrp[23].end = 330200;  kgrp[23].loop = 2283;
+    kgrp[24].pos = 330201;  kgrp[24].end = 348889;  kgrp[24].loop = 2689;
+    kgrp[25].pos = 348890;  kgrp[25].end = 365675;  kgrp[25].loop = 4370;
+    kgrp[26].pos = 365676;  kgrp[26].end = 383661;  kgrp[26].loop = 5225;
+    kgrp[27].pos = 383662;  kgrp[27].end = 393372;  kgrp[27].loop = 2811;
+    kgrp[28].pos = 383662;  kgrp[28].end = 393372;  kgrp[28].loop = 2811; //ghost
+    kgrp[29].pos = 393373;  kgrp[29].end = 406045;  kgrp[29].loop = 4522;
+    kgrp[30].pos = 406046;  kgrp[30].end = 414486;  kgrp[30].loop = 2306;
+    kgrp[31].pos = 406046;  kgrp[31].end = 414486;  kgrp[31].loop = 2306; //ghost
+    kgrp[32].pos = 414487;  kgrp[32].end = 422408;  kgrp[32].loop = 2169;
 
-    // Extra xfade loop.
     waves = epianoData;
-    foreach (k; 0 .. 28) {
-      int p0 = keyGroups[k].end;
-      int p1 = keyGroups[k].end - keyGroups[k].loop;
-      for (float xf = 1.0; xf > 0.0; xf += -0.02) {
-        waves[p0] = cast(short)((1.0f - xf) * cast(float) waves[p0] +
-                                xf * cast(float) waves[p1]);
+
+    //extra xfade looping...
+    for(int k=0; k<28; k++)
+    {
+      int p0 = kgrp[k].end;
+      int p1 = kgrp[k].end - kgrp[k].loop;
+
+      float xf = 1.0f;
+      float dxf = -0.02f;
+
+      while(xf > 0.0f)
+      {
+        waves[p0] = cast(short)((1.0f - xf) * cast(float)waves[p0] + xf * cast(float)waves[p1]);
         p0--;
         p1--;
+        xf += dxf;
       }
     }
   }
