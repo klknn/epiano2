@@ -2,8 +2,9 @@
 
 [![ci](https://github.com/klknn/epiano2/actions/workflows/ci.yml/badge.svg)](https://github.com/klknn/epiano2/actions/workflows/ci.yml)
 
-Multi-platform compatible [mda epiano](http://mda.smartelectronix.com/synths.htm)
-port using [Dplug](https://github.com/AuburnSounds/Dplug).
+[mda epiano](http://mda.smartelectronix.com/synths.htm) port using [Dplug](https://github.com/AuburnSounds/Dplug).
+
+DEMO https://youtu.be/hiienjEwzSY
 
 ## License
 
