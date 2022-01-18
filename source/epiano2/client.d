@@ -148,6 +148,7 @@ class Epiano2Client : Client {
     auto tmp = mallocDup(defaultPreset.getNormalizedParamValues);
     scope (exit) free(tmp.ptr);
 
+    // TODO: Register all the presets.
     presets ~= mallocNew!Preset("Bright", tmp);
     return presets.releaseData();
   }
@@ -225,10 +226,11 @@ class Epiano2Client : Client {
 
   override void processAudio(
       const(float*)[] inputs, float*[] outputs, int sampleFrames, TimeInfo info) {
-    int index,  event, frame;
 
     processMidi(sampleFrames);
+    processParams();
 
+    int index, event, frame;
     while(frame<sampleFrames) {
       // debugLogf("event %d frame %d", event, frame);
       auto frames = notes[event++];
@@ -391,6 +393,30 @@ class Epiano2Client : Client {
   }
 
   void processParams() {
+    size = cast(int) (12f * param(Param.hardness).getNormalized - 6.0);
+
+    auto trebNormalized = param(Param.trebleBoost).getNormalized;
+    treb = 4f * trebNormalized * trebNormalized - 1f;
+    tfrq = (trebNormalized > 0.5f) ? 14000f : 5000f;
+    tfrq = 1.0f - cast(float) exp(-iFs * tfrq);
+
+    auto modNormalized = param(Param.modulation).getNormalized;
+    rmod = lmod = 2 * modNormalized - 1.0f; //lfo depth
+    if(modNormalized < 0.5f) rmod = -rmod;
+
+    dlfo = 6.283f * iFs * cast(float)exp(6.22f * param(Param.lfoRate).getNormalized - 2.61f); //lfo rate
+
+    auto velsensNormalized = param(Param.velocitySense).getNormalized;
+    velsens = 2 * velsensNormalized + 1.0f;
+    if(velsensNormalized < 0.25f) velsens -= 0.75f - 3.0f * velsensNormalized;
+
+    width = 0.03f * param(Param.stereoWidth).getNormalized;
+    poly = 1 + cast(int)(31.9f * param(Param.polyphony).getNormalized);
+    fine = param(Param.fineTuning).getNormalized - 0.5f;
+    auto randomNormalized = param(Param.randomTuning).getNormalized;
+    random = 0.077f * randomNormalized * randomNormalized;
+    stretch = 0.0f; //0.000434f * (param[11] - 0.5f); parameter re-used for overdrive!
+    overdrive = 1.8f * param(Param.overdrive).getNormalized;
   }
 
   float Fs, iFs;
