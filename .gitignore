@@ -5,6 +5,7 @@
 !*.md
 !*.ver
 !*.lst
+!*.yml
 
 !LICENSE
 !dub.json
