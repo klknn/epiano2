@@ -64,12 +64,92 @@ struct KeyGroup {
 class Epiano2Client : Client {
   nothrow @nogc public:
 
+  this() {
+    super();
+    //Waveform data and keymapping
+    kgrp[ 0].root = 36;  kgrp[ 0].high = 39; //C1
+    kgrp[ 3].root = 43;  kgrp[ 3].high = 45; //G1
+    kgrp[ 6].root = 48;  kgrp[ 6].high = 51; //C2
+    kgrp[ 9].root = 55;  kgrp[ 9].high = 57; //G2
+    kgrp[12].root = 60;  kgrp[12].high = 63; //C3
+    kgrp[15].root = 67;  kgrp[15].high = 69; //G3
+    kgrp[18].root = 72;  kgrp[18].high = 75; //C4
+    kgrp[21].root = 79;  kgrp[21].high = 81; //G4
+    kgrp[24].root = 84;  kgrp[24].high = 87; //C5
+    kgrp[27].root = 91;  kgrp[27].high = 93; //G5
+    kgrp[30].root = 96;  kgrp[30].high =999; //C6
+
+    kgrp[0].pos = 0;        kgrp[0].end = 8476;     kgrp[0].loop = 4400;
+    kgrp[1].pos = 8477;     kgrp[1].end = 16248;    kgrp[1].loop = 4903;
+    kgrp[2].pos = 16249;    kgrp[2].end = 34565;    kgrp[2].loop = 6398;
+    kgrp[3].pos = 34566;    kgrp[3].end = 41384;    kgrp[3].loop = 3938;
+    kgrp[4].pos = 41385;    kgrp[4].end = 45760;    kgrp[4].loop = 1633; //was 1636;
+    kgrp[5].pos = 45761;    kgrp[5].end = 65211;    kgrp[5].loop = 5245;
+    kgrp[6].pos = 65212;    kgrp[6].end = 72897;    kgrp[6].loop = 2937;
+    kgrp[7].pos = 72898;    kgrp[7].end = 78626;    kgrp[7].loop = 2203; //was 2204;
+    kgrp[8].pos = 78627;    kgrp[8].end = 100387;   kgrp[8].loop = 6368;
+    kgrp[9].pos = 100388;   kgrp[9].end = 116297;   kgrp[9].loop = 10452;
+    kgrp[10].pos = 116298;  kgrp[10].end = 127661;  kgrp[10].loop = 5217; //was 5220;
+    kgrp[11].pos = 127662;  kgrp[11].end = 144113;  kgrp[11].loop = 3099;
+    kgrp[12].pos = 144114;  kgrp[12].end = 152863;  kgrp[12].loop = 4284;
+    kgrp[13].pos = 152864;  kgrp[13].end = 173107;  kgrp[13].loop = 3916;
+    kgrp[14].pos = 173108;  kgrp[14].end = 192734;  kgrp[14].loop = 2937;
+    kgrp[15].pos = 192735;  kgrp[15].end = 204598;  kgrp[15].loop = 4732;
+    kgrp[16].pos = 204599;  kgrp[16].end = 218995;  kgrp[16].loop = 4733;
+    kgrp[17].pos = 218996;  kgrp[17].end = 233801;  kgrp[17].loop = 2285;
+    kgrp[18].pos = 233802;  kgrp[18].end = 248011;  kgrp[18].loop = 4098;
+    kgrp[19].pos = 248012;  kgrp[19].end = 265287;  kgrp[19].loop = 4099;
+    kgrp[20].pos = 265288;  kgrp[20].end = 282255;  kgrp[20].loop = 3609;
+    kgrp[21].pos = 282256;  kgrp[21].end = 293776;  kgrp[21].loop = 2446;
+    kgrp[22].pos = 293777;  kgrp[22].end = 312566;  kgrp[22].loop = 6278;
+    kgrp[23].pos = 312567;  kgrp[23].end = 330200;  kgrp[23].loop = 2283;
+    kgrp[24].pos = 330201;  kgrp[24].end = 348889;  kgrp[24].loop = 2689;
+    kgrp[25].pos = 348890;  kgrp[25].end = 365675;  kgrp[25].loop = 4370;
+    kgrp[26].pos = 365676;  kgrp[26].end = 383661;  kgrp[26].loop = 5225;
+    kgrp[27].pos = 383662;  kgrp[27].end = 393372;  kgrp[27].loop = 2811;
+    kgrp[28].pos = 383662;  kgrp[28].end = 393372;  kgrp[28].loop = 2811; //ghost
+    kgrp[29].pos = 393373;  kgrp[29].end = 406045;  kgrp[29].loop = 4522;
+    kgrp[30].pos = 406046;  kgrp[30].end = 414486;  kgrp[30].loop = 2306;
+    kgrp[31].pos = 406046;  kgrp[31].end = 414486;  kgrp[31].loop = 2306; //ghost
+    kgrp[32].pos = 414487;  kgrp[32].end = 422408;  kgrp[32].loop = 2169;
+
+    waves = epianoData;
+
+    //extra xfade looping...
+    foreach (k; 0 .. 28) {
+      int p0 = kgrp[k].end;
+      int p1 = kgrp[k].end - kgrp[k].loop;
+
+      float xf = 1.0f;
+      float dxf = -0.02f;
+
+      while(xf > 0.0f) {
+        waves[p0] = cast(short)((1.0f - xf) * cast(float)waves[p0]
+                                + xf * cast(float)waves[p1]);
+        p0--;
+        p1--;
+        xf += dxf;
+      }
+    }
+  }
+
   override PluginInfo buildPluginInfo() const {
-    // Plugin info is parsed from plugin.json here at compile time.
-    // Indeed it is strongly recommended that you do not fill PluginInfo
-    // manually, else the information could diverge.
     static immutable pluginInfo = parsePluginInfo(import("plugin.json"));
     return pluginInfo;
+  }
+
+  override Preset[] buildPresets() {
+    import core.stdc.stdlib : free;
+
+    auto presets = makeVec!Preset();
+    Preset defaultPreset = makeDefaultPreset();
+    presets ~= defaultPreset;
+
+    auto tmp = mallocDup(defaultPreset.getNormalizedParamValues);
+    scope (exit) free(tmp.ptr);
+
+    presets ~= mallocNew!Preset("Bright", tmp);
+    return presets.releaseData();
   }
 
   override Parameter[] buildParameters() const {
@@ -131,7 +211,6 @@ class Epiano2Client : Client {
 
   override LegalIO[] buildLegalIO() const {
     auto io = makeVec!LegalIO();
-    // TODO: io ~= LegalIO(/*numInputChannels=*/0, /*numOutputChannels*/1);
     io ~= LegalIO(/*numInputChannels=*/0, /*numOutputChannels*/2);
     return io.releaseData();
   }
@@ -142,173 +221,51 @@ class Epiano2Client : Client {
     iFs = 1f / sampleRate;
   }
 
-  void noteOn(int note, int velocity) {
-    float l = 99.0f;
-    int v, vl=0, k, s;
-
-    if(velocity > 0)
-    {
-      if(activevoices < poly) //add a note
-      {
-        vl = activevoices;
-        activevoices++;
-        voice[vl].f0 = voice[vl].f1 = 0.0f;
-      }
-      else //steal a note
-      {
-        for(v=0; v<poly; v++)  //find quietest voice
-        {
-          if(voice[v].env < l) { l = voice[v].env;  vl = v; }
-        }
-      }
-      // debugLogf("noteOn using voice %d", vl);
-
-      k = (note - 60) * (note - 60);
-      l = fine + random * (cast(float)(k % 13) - 6.5f);  //random & fine tune
-      if(note > 60) l += stretch * cast(float)k; //stretch
-
-      s = size;
-      //if(velocity > 40) s += (VstInt32)(sizevel * (float)(velocity - 40));  - no velocity to hardness in ePiano
-
-      k = 0;
-      while(note > (kgrp[k].high + s)) {
-        k += 3;  //find keygroup
-        // debugLogf("noteOn using note %d  kgrp %d high %d", note, k, kgrp[k].high);
-      }
-      l += cast(float)(note - kgrp[k].root); //pitch
-      l = 32000.0f * iFs * cast(float)exp(0.05776226505 * l);
-      voice[vl].delta = cast(int)(65536.0f * l);
-      voice[vl].frac = 0;
-
-      if(velocity > 48) k++; //mid velocity sample
-      if(velocity > 80) k++; //high velocity sample
-      voice[vl].pos = kgrp[k].pos;
-      voice[vl].end = kgrp[k].end - 1;
-      voice[vl].loop = kgrp[k].loop;
-
-      voice[vl].env = (3.0f + 2.0f * velsens) * cast(float)pow(0.0078f * velocity, velsens); //velocity
-
-      if(note > 60) voice[vl].env *= cast(float)exp(0.01f * cast(float)(60 - note)); //new! high notes quieter
-
-      // TODO
-      auto modulation = 0;
-      l = 50.0f + modulation * modulation * muff + muffvel * cast(float)(velocity - 64); //muffle
-      if(l < (55.0f + 0.4f * cast(float)note)) l = 55.0f + 0.4f * cast(float)note;
-      if(l > 210.0f) l = 210.0f;
-      voice[vl].ff = l * l * iFs;
-
-      voice[vl].note = note; //note->pan
-      if(note <  12) note = 12;
-      if(note > 108) note = 108;
-      l = volume;
-      voice[vl].outr = l + l * width * cast(float)(note - 60);
-      voice[vl].outl = l + l - voice[vl].outr;
-
-      if(note < 44) note = 44; //limit max decay length
-      // TODO
-      auto decay = 0.5f;
-      voice[vl].dec = cast(float)exp(-iFs * exp(-1.0 + 0.03 * cast(double)note - 2.0f * decay));
-    }
-    else //note off
-    {
-      for(v=0; v<NVOICES; v++)
-        if(voice[v].note==note) //any voices playing that note?
-        {
-          if(sustain==0)
-          {
-            // TODO
-            auto release = 0f;
-            voice[v].dec = cast(float)exp(-iFs * exp(6.0 + 0.01 * cast(double)note - 5.0 * release));
-          }
-          else voice[v].note = SUSTAIN;
-        }
-    }
-  }
-
-  override int maxFramesInProcess() nothrow @nogc
-  {
-    return EVENTBUFFER; // default returns 0 which means "do not split"
-  }
-
-
-  private void processMidi(int frames) {
-    // debugLogf("processMidi: %d frames", frames);
-    int npos = 0;
-    foreach (MidiMessage msg; getNextMidiMessages(frames)) {
-      if (msg.isNoteOn) {
-        notes[npos++] = msg.offset;
-        notes[npos++] = msg.noteNumber;
-        notes[npos++] = msg.noteVelocity;
-        // noteOn(msg.noteNumber, msg.noteVelocity);
-      } else if (msg.isNoteOff) {
-        notes[npos++] = msg.offset;
-        notes[npos++] = msg.noteNumber;
-        notes[npos++] = 0;
-        // noteOn(msg.noteNumber, 0);
-      }
-      else if (msg.isAllNotesOff || msg.isAllSoundsOff) {
-        for(int v=0; v<NVOICES; v++) voice[v].dec=0.99f;
-        sustain = 0;
-        muff = 160.0f;
-      }
-      if (npos > EVENTBUFFER)  npos -= 3; // discard events if buffer full
-    }
-    notes[npos] = EVENTS_DONE;
-  }
+  override int maxFramesInProcess() { return EVENTBUFFER; }
 
   override void processAudio(
       const(float*)[] inputs, float*[] outputs, int sampleFrames, TimeInfo info) {
-    int index;
-    int event=0, frame=0, v;
-    float x=0, l=0, r =0, od=overdrive;
-    int i;
+    int index,  event, frame;
 
     processMidi(sampleFrames);
 
-    while(frame<sampleFrames)
-    {
+    while(frame<sampleFrames) {
       // debugLogf("event %d frame %d", event, frame);
       auto frames = notes[event++];
       if(frames>sampleFrames) frames = sampleFrames;
       frames -= frame;
       frame += frames;
 
-      while(--frames>=0)
-      {
-        Voice* V = voice.ptr;
-        l = r = 0.0f;
+      while(--frames>=0) {
+        auto l = 0f;
+        auto r = 0f;
 
-        for(v=0; v<activevoices; v++)
-        {
+        foreach (ref V; voice) {
           V.frac += V.delta;  //integer-based linear interpolation
           V.pos += V.frac >> 16;
           V.frac &= 0xFFFF;
           if(V.pos > V.end) V.pos -= V.loop;
-          i = waves[V.pos];
+          int i = waves[V.pos];
           i = (i << 7) + (V.frac >> 9) * (waves[V.pos + 1] - i) + 0x40400000;
-          x = V.env * (*cast(float *)&i - 3.0f);  //fast int.float
+          auto x = V.env * (*cast(float *)&i - 3.0f);  //fast int.float
           // debugLogf("x %f env %f i %d wav %d", x, V.env, i, waves[V.pos + 1]);
           V.env = V.env * V.dec;  //envelope
 
-          if(x>0.0f) { x -= od * x * x;  if(x < -V.env) x = -V.env; } //+= 0.5f * x * x; } //overdrive
+          if(x>0.0f) { x -= overdrive * x * x;  if(x < -V.env) x = -V.env; } //+= 0.5f * x * x; } //overdrive
 
           l += V.outl * x;
           r += V.outr * x;
-
-          V++;
         }
-        // TODO
-        // tl += tfrq * (l - tl);  //treble boost
-        // tr += tfrq * (r - tr);
-        // r  += treb * (r - tr);
-        // l  += treb * (l - tl);
-        // lfo0 += dlfo * lfo1;  //LFO for tremolo and autopan
-        // lfo1 -= dlfo * lfo0;
-        // l += l * lmod * lfo1;
-        // r += r * rmod * lfo1;  //worth making all these local variables?
 
-        // *out0++ += x;
-        // *out1++ += x;
+        tl += tfrq * (l - tl);  //treble boost
+        tr += tfrq * (r - tr);
+        r  += treb * (r - tr);
+        l  += treb * (l - tl);
+        lfo0 += dlfo * lfo1;  //LFO for tremolo and autopan
+        lfo1 -= dlfo * lfo0;
+        l += l * lmod * lfo1;
+        r += r * rmod * lfo1;  //worth making all these local variables?
+
         outputs[0][index] = l;
         outputs[1][index] = r;
         ++index;
@@ -316,24 +273,126 @@ class Epiano2Client : Client {
       // debugLogf("out %f %f ... %f %f", outputs[0][0], outputs[1][0],
       // outputs[0][sampleFrames-1], outputs[1][sampleFrames-1]);
 
-      if(frame<sampleFrames)
-      {
+      if(frame<sampleFrames) {
+        // TODO
         // if(activevoices == 0 && programs[curProgram].param[4] > 0.5f)
         // { lfo0 = -0.7071f;  lfo1 = 0.7071f; } //reset LFO phase - good idea?
         int note = notes[event++];
         int vel  = notes[event++];
         // debugLogf("note %d vel %d", note, vel);
-        noteOn(note, vel);
+        if (vel > 0) noteOn(note, vel);
+        else noteOff(note);
       }
     }
     if(fabs(tl)<1.0e-10) tl = 0.0f; //anti-denormal
     if(fabs(tr)<1.0e-10) tr = 0.0f;
 
-    for(v=0; v<activevoices; v++) if(voice[v].env < SILENCE) voice[v] = voice[--activevoices];
+    for (int v=0; v<activevoices; v++)
+      if(voice[v].env < SILENCE) voice[v] = voice[--activevoices];
+
     notes[0] = EVENTS_DONE;  //mark events buffer as done
   }
 
  private:
+  void processMidi(int frames) {
+    // debugLogf("processMidi: %d frames", frames);
+    int npos = 0;
+    foreach (MidiMessage msg; getNextMidiMessages(frames)) {
+      if (msg.isNoteOn) {
+        notes[npos++] = msg.offset;
+        notes[npos++] = msg.noteNumber;
+        notes[npos++] = msg.noteVelocity;
+      } else if (msg.isNoteOff) {
+        notes[npos++] = msg.offset;
+        notes[npos++] = msg.noteNumber;
+        notes[npos++] = 0;
+      }
+      else if (msg.isAllNotesOff || msg.isAllSoundsOff) {
+        for(int v=0; v<NVOICES; v++) voice[v].dec=0.99f;
+        sustain = 0;
+        muff = 160.0f;
+      }
+      if (npos > EVENTBUFFER) npos -= 3; // discard events if buffer full
+    }
+    notes[npos] = EVENTS_DONE;
+  }
+
+  void noteOn(int note, int velocity) {
+    int vl;
+    if(activevoices < poly) {
+      vl = activevoices;
+      activevoices++;
+      voice[vl].f0 = voice[vl].f1 = 0.0f;
+    } else {
+      //steal a note
+      //find quietest voice
+      float l = float.infinity;
+      foreach (v; 0 .. poly)   {
+        if(voice[v].env < l) { l = voice[v].env;  vl = v; }
+      }
+    }
+    // debugLogf("noteOn using voice %d", vl);
+
+    int k = (note - 60) * (note - 60);
+    float l = fine + random * (cast(float)(k % 13) - 6.5f);  //random & fine tune
+    if(note > 60) l += stretch * cast(float)k; //stretch
+
+    k = 0;
+    while(note > (kgrp[k].high + size)) {
+      k += 3;  //find keygroup
+      // debugLogf("noteOn using note %d  kgrp %d high %d", note, k, kgrp[k].high);
+    }
+    l += cast(float)(note - kgrp[k].root); //pitch
+    l = 32000.0f * iFs * cast(float)exp(0.05776226505 * l);
+    voice[vl].delta = cast(int)(65536.0f * l);
+    voice[vl].frac = 0;
+
+    if(velocity > 48) k++; //mid velocity sample
+    if(velocity > 80) k++; //high velocity sample
+    voice[vl].pos = kgrp[k].pos;
+    voice[vl].end = kgrp[k].end - 1;
+    voice[vl].loop = kgrp[k].loop;
+
+    voice[vl].env = (3.0f + 2.0f * velsens) * cast(float)pow(0.0078f * velocity, velsens); //velocity
+
+    if(note > 60) voice[vl].env *= cast(float)exp(0.01f * cast(float)(60 - note)); //new! high notes quieter
+
+    // TODO
+    auto modulation = 0;
+    l = 50.0f + modulation * modulation * muff + muffvel * cast(float)(velocity - 64); //muffle
+    if(l < (55.0f + 0.4f * cast(float)note)) l = 55.0f + 0.4f * cast(float)note;
+    if(l > 210.0f) l = 210.0f;
+    voice[vl].ff = l * l * iFs;
+
+    voice[vl].note = note; //note->pan
+    if(note <  12) note = 12;
+    if(note > 108) note = 108;
+    l = volume;
+    voice[vl].outr = l + l * width * cast(float)(note - 60);
+    voice[vl].outl = l + l - voice[vl].outr;
+
+    if(note < 44) note = 44; //limit max decay length
+    // TODO
+    auto decay = 0.5f;
+    voice[vl].dec = cast(float)exp(-iFs * exp(-1.0 + 0.03 * cast(double)note - 2.0f * decay));
+  }
+
+  void noteOff(int note) {
+    foreach (v; 0 .. NVOICES) {
+      //any voices playing that note?
+      if(voice[v].note == note) {
+        if(sustain == 0) {
+          // TODO
+          auto release = 0f;
+          voice[v].dec = cast(float)exp(-iFs * exp(6.0 + 0.01 * cast(double)note - 5.0 * release));
+        } else voice[v].note = SUSTAIN;
+      }
+    }
+  }
+
+  void processParams() {
+  }
+
   float Fs, iFs;
 
   enum EVENTBUFFER = 1024;
@@ -357,75 +416,4 @@ class Epiano2Client : Client {
   float treb = 0, tfrq = 0.5, tl = 0, tr = 0;
   float tune = 0, fine = 0, random = 0, stretch = 0, overdrive = 0;
   float muff = 160, muffvel = 0, sizevel, velsens = 1, volume = 0.5, modwhl = 0;
-
- public:
-  this() {
-    super();
-    //Waveform data and keymapping
-    kgrp[ 0].root = 36;  kgrp[ 0].high = 39; //C1
-    kgrp[ 3].root = 43;  kgrp[ 3].high = 45; //G1
-    kgrp[ 6].root = 48;  kgrp[ 6].high = 51; //C2
-    kgrp[ 9].root = 55;  kgrp[ 9].high = 57; //G2
-    kgrp[12].root = 60;  kgrp[12].high = 63; //C3
-    kgrp[15].root = 67;  kgrp[15].high = 69; //G3
-    kgrp[18].root = 72;  kgrp[18].high = 75; //C4
-    kgrp[21].root = 79;  kgrp[21].high = 81; //G4
-    kgrp[24].root = 84;  kgrp[24].high = 87; //C5
-    kgrp[27].root = 91;  kgrp[27].high = 93; //G5
-    kgrp[30].root = 96;  kgrp[30].high =999; //C6
-
-    kgrp[0].pos = 0;        kgrp[0].end = 8476;     kgrp[0].loop = 4400;
-    kgrp[1].pos = 8477;     kgrp[1].end = 16248;    kgrp[1].loop = 4903;
-    kgrp[2].pos = 16249;    kgrp[2].end = 34565;    kgrp[2].loop = 6398;
-    kgrp[3].pos = 34566;    kgrp[3].end = 41384;    kgrp[3].loop = 3938;
-    kgrp[4].pos = 41385;    kgrp[4].end = 45760;    kgrp[4].loop = 1633; //was 1636;
-    kgrp[5].pos = 45761;    kgrp[5].end = 65211;    kgrp[5].loop = 5245;
-    kgrp[6].pos = 65212;    kgrp[6].end = 72897;    kgrp[6].loop = 2937;
-    kgrp[7].pos = 72898;    kgrp[7].end = 78626;    kgrp[7].loop = 2203; //was 2204;
-    kgrp[8].pos = 78627;    kgrp[8].end = 100387;   kgrp[8].loop = 6368;
-    kgrp[9].pos = 100388;   kgrp[9].end = 116297;   kgrp[9].loop = 10452;
-    kgrp[10].pos = 116298;  kgrp[10].end = 127661;  kgrp[10].loop = 5217; //was 5220;
-    kgrp[11].pos = 127662;  kgrp[11].end = 144113;  kgrp[11].loop = 3099;
-    kgrp[12].pos = 144114;  kgrp[12].end = 152863;  kgrp[12].loop = 4284;
-    kgrp[13].pos = 152864;  kgrp[13].end = 173107;  kgrp[13].loop = 3916;
-    kgrp[14].pos = 173108;  kgrp[14].end = 192734;  kgrp[14].loop = 2937;
-    kgrp[15].pos = 192735;  kgrp[15].end = 204598;  kgrp[15].loop = 4732;
-    kgrp[16].pos = 204599;  kgrp[16].end = 218995;  kgrp[16].loop = 4733;
-    kgrp[17].pos = 218996;  kgrp[17].end = 233801;  kgrp[17].loop = 2285;
-    kgrp[18].pos = 233802;  kgrp[18].end = 248011;  kgrp[18].loop = 4098;
-    kgrp[19].pos = 248012;  kgrp[19].end = 265287;  kgrp[19].loop = 4099;
-    kgrp[20].pos = 265288;  kgrp[20].end = 282255;  kgrp[20].loop = 3609;
-    kgrp[21].pos = 282256;  kgrp[21].end = 293776;  kgrp[21].loop = 2446;
-    kgrp[22].pos = 293777;  kgrp[22].end = 312566;  kgrp[22].loop = 6278;
-    kgrp[23].pos = 312567;  kgrp[23].end = 330200;  kgrp[23].loop = 2283;
-    kgrp[24].pos = 330201;  kgrp[24].end = 348889;  kgrp[24].loop = 2689;
-    kgrp[25].pos = 348890;  kgrp[25].end = 365675;  kgrp[25].loop = 4370;
-    kgrp[26].pos = 365676;  kgrp[26].end = 383661;  kgrp[26].loop = 5225;
-    kgrp[27].pos = 383662;  kgrp[27].end = 393372;  kgrp[27].loop = 2811;
-    kgrp[28].pos = 383662;  kgrp[28].end = 393372;  kgrp[28].loop = 2811; //ghost
-    kgrp[29].pos = 393373;  kgrp[29].end = 406045;  kgrp[29].loop = 4522;
-    kgrp[30].pos = 406046;  kgrp[30].end = 414486;  kgrp[30].loop = 2306;
-    kgrp[31].pos = 406046;  kgrp[31].end = 414486;  kgrp[31].loop = 2306; //ghost
-    kgrp[32].pos = 414487;  kgrp[32].end = 422408;  kgrp[32].loop = 2169;
-
-    waves = epianoData;
-
-    //extra xfade looping...
-    for(int k=0; k<28; k++)
-    {
-      int p0 = kgrp[k].end;
-      int p1 = kgrp[k].end - kgrp[k].loop;
-
-      float xf = 1.0f;
-      float dxf = -0.02f;
-
-      while(xf > 0.0f)
-      {
-        waves[p0] = cast(short)((1.0f - xf) * cast(float)waves[p0] + xf * cast(float)waves[p1]);
-        p0--;
-        p1--;
-        xf += dxf;
-      }
-    }
-  }
 }
