@@ -14,7 +14,7 @@ import epiano2.parameter : ModParameter;
 
 // This define entry points for plugin formats,
 // depending on which version identifiers are defined.
-mixin(pluginEntryPoints!Epiano2Client);
+version (unittest) {} else mixin(pluginEntryPoints!Epiano2Client);
 
 enum Param : int {
   envelopeDecay = 0,
