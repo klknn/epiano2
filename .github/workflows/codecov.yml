@@ -37,7 +37,7 @@ jobs:
       with:
         compiler: ${{ matrix.compiler }}
 
-    - name: Test synth2
+    - name: Test
       run: |
         dub test -b=unittest-cov
 
