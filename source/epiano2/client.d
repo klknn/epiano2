@@ -6,9 +6,10 @@ License:   MIT, GPL v2 or any later version (See LICENSE).
 */
 module epiano2.client;
 
-import std.math;
-import std.algorithm;
-import dplug.core, dplug.client;
+import mir.math : fabs, fastmath, exp, pow;
+import std.algorithm : min;
+import dplug.core : mallocNew, makeVec;
+import dplug.client : Client, DLLEntryPoint, IntegerParameter, LegalIO, LinearFloatParameter, MidiControlChange, MidiMessage, Parameter, parsePluginInfo, pluginEntryPoints, PluginInfo, Preset, TimeInfo;
 import epiano2.data : epianoData;
 import epiano2.parameter : ModParameter;
 
@@ -62,7 +63,7 @@ struct KeyGroup {
 }
 
 class Epiano2Client : Client {
-  nothrow @nogc public:
+  @fastmath nothrow @nogc public:
 
   this() {
     super();
@@ -225,7 +226,7 @@ class Epiano2Client : Client {
     iFs = 1f / sampleRate;
   }
 
-  override int maxFramesInProcess() { return EVENTBUFFER; }
+  override int maxFramesInProcess() { return 64; }
 
   override void processAudio(
       const(float*)[] inputs, float*[] outputs, int sampleFrames, TimeInfo info) {
@@ -275,7 +276,7 @@ class Epiano2Client : Client {
 
       if(frame<sampleFrames) {
         //reset LFO phase - good idea?
-        if(activevoices == 0 && param(Param.modulation).getNormalized > 0.5f) {
+        if(activevoices == 0 && modulation > 0.5f) {
           lfo0 = -0.7071f;
           lfo1 = 0.7071f;
         }
@@ -313,7 +314,7 @@ class Epiano2Client : Client {
             //over-ride pan/trem depth
             if(modwhl > 0.05f) {
               rmod = lmod = modwhl; //lfo depth
-              if(param(Param.modulation).getNormalized < 0.5f) rmod = -rmod;
+              if(modulation < 0.5f) rmod = -rmod;
             }
             break;
           case MidiControlChange.channelVolume:
@@ -322,7 +323,6 @@ class Epiano2Client : Client {
 
           case MidiControlChange.sustainOnOff:
           case MidiControlChange.sustenutoOnOff:
-            debugLogf("sustain %d", msg.controlChangeValue);
             sustain = msg.controlChangeValue & 0x44;
             if (sustain == 0) {
               notes[npos++] = msg.offset;
@@ -357,7 +357,7 @@ class Epiano2Client : Client {
       //steal a note
       //find quietest voice
       float l = float.infinity;
-      foreach (v; 0 .. poly)   {
+      foreach (v; 0 .. poly) {
         if(voice[v].env < l) { l = voice[v].env;  vl = v; }
       }
     }
@@ -384,7 +384,6 @@ class Epiano2Client : Client {
 
     if(note > 60) voice[vl].env *= cast(float)exp(0.01f * cast(float)(60 - note)); //new! high notes quieter
 
-    auto modulation = param(Param.modulation).getNormalized;
     l = 50.0f + modulation * modulation * muff + muffvel * cast(float)(velocity - 64); //muffle
     if(l < (55.0f + 0.4f * cast(float)note)) l = 55.0f + 0.4f * cast(float)note;
     if(l > 210.0f) l = 210.0f;
@@ -397,21 +396,18 @@ class Epiano2Client : Client {
     voice[vl].outr = l + l * width * cast(float)(note - 60);
     voice[vl].outl = l + l - voice[vl].outr;
 
-    auto decayLength = min(note, 44);
+    if (note < 44) note = 44;
     voice[vl].dec = cast(float) exp(
-        -iFs * exp(-1.0 + 0.03 * cast(double)note
-                   - 2.0f * param(Param.envelopeDecay).getNormalized));
+        -iFs * exp(-1.0 + 0.03 * cast(double)note - 2.0f * decay));
   }
 
   void noteOff(int note) {
+    const dec = cast(float) exp(-iFs * exp(6.0 + 0.01 * cast(double) note - 5.0 * release));
     foreach (v; 0 .. NVOICES) {
       //any voices playing that note?
       if(voice[v].note == note) {
-        if(sustain == 0) {
-          voice[v].dec = cast(float) exp(
-              -iFs * exp(6.0 + 0.01 * cast(double) note -
-                         5.0 * param(Param.envelopeRelease).getNormalized));
-        } else voice[v].note = SUSTAIN;
+        if(sustain == 0) voice[v].dec = dec;
+        else voice[v].note = SUSTAIN;
       }
     }
   }
@@ -441,11 +437,15 @@ class Epiano2Client : Client {
     random = 0.077f * randomNormalized * randomNormalized;
     stretch = 0.0f; //0.000434f * (param[11] - 0.5f); parameter re-used for overdrive!
     overdrive = 1.8f * param(Param.overdrive).getNormalized;
+
+    release = param(Param.envelopeRelease).getNormalized;
+    decay = param(Param.envelopeDecay).getNormalized;
+    modulation = param(Param.modulation).getNormalized;
   }
 
   float Fs, iFs;
 
-  enum EVENTBUFFER = 1024;
+  enum EVENTBUFFER = 120;
   enum EVENTS_DONE = 99999999;
   //list of delta|note|velocity for current block
   int[EVENTBUFFER + 8] notes = [EVENTS_DONE];
@@ -465,5 +465,6 @@ class Epiano2Client : Client {
   float lfo0 = 0, lfo1 = 1, dlfo = 0, lmod = 0, rmod = 0;
   float treb = 0, tfrq = 0.5, tl = 0, tr = 0;
   float tune = 0, fine = 0, random = 0, stretch = 0, overdrive = 0;
-  float muff = 160, muffvel = 0, sizevel, velsens = 1, volume = 0.5, modwhl = 0;
+  float muff = 160, muffvel = 0, sizevel, velsens = 1, volume = 0.2, modwhl = 0;
+  float modulation = 0, decay = 0, release = 0;
 }
