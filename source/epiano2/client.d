@@ -139,18 +139,21 @@ class Epiano2Client : Client {
   }
 
   override Preset[] buildPresets() {
-    import core.stdc.stdlib : free;
-
     auto presets = makeVec!Preset();
-    Preset defaultPreset = makeDefaultPreset();
-    presets ~= defaultPreset;
 
-    auto tmp = mallocDup(defaultPreset.getNormalizedParamValues);
-    scope (exit) free(tmp.ptr);
+    void fillpatch(string name, float[12] params...) {
+      presets ~= mallocNew!Preset(name, params[]);
+    }
 
-    // TODO: Register all the presets.
-    presets ~= mallocNew!Preset("Bright", tmp);
-    return presets.releaseData();
+    fillpatch("Default", 0.500f, 0.500f, 0.500f, 0.500f, 0.500f, 0.650f, 0.250f, 0.500f, 0.50f, 0.500f, 0.146f, 0.000f);
+    fillpatch("Bright", 0.500f, 0.500f, 1.000f, 0.800f, 0.500f, 0.650f, 0.250f, 0.500f, 0.50f, 0.500f, 0.146f, 0.500f);
+    fillpatch("Mellow", 0.500f, 0.500f, 0.000f, 0.000f, 0.500f, 0.650f, 0.250f, 0.500f, 0.50f, 0.500f, 0.246f, 0.000f);
+    fillpatch("Autopan", 0.500f, 0.500f, 0.500f, 0.500f, 0.250f, 0.650f, 0.250f, 0.500f, 0.50f, 0.500f, 0.246f, 0.000f);
+    fillpatch("Tremolo", 0.500f, 0.500f, 0.500f, 0.500f, 0.750f, 0.650f, 0.250f, 0.500f, 0.50f, 0.500f, 0.246f, 0.000f);
+    fillpatch("(default)", 0.500f, 0.500f, 0.500f, 0.500f, 0.500f, 0.650f, 0.250f, 0.500f, 0.50f, 0.500f, 0.146f, 0.000f);
+    fillpatch("(default)", 0.500f, 0.500f, 0.500f, 0.500f, 0.500f, 0.650f, 0.250f, 0.500f, 0.50f, 0.500f, 0.146f, 0.000f);
+    fillpatch("(default)", 0.500f, 0.500f, 0.500f, 0.500f, 0.500f, 0.650f, 0.250f, 0.500f, 0.50f, 0.500f, 0.146f, 0.000f);
+    return presets.releaseData;
   }
 
   override Parameter[] buildParameters() const {
@@ -226,13 +229,11 @@ class Epiano2Client : Client {
 
   override void processAudio(
       const(float*)[] inputs, float*[] outputs, int sampleFrames, TimeInfo info) {
-
-    processMidi(sampleFrames);
     processParams();
+    processMidi(sampleFrames);
 
     int index, event, frame;
     while(frame<sampleFrames) {
-      // debugLogf("event %d frame %d", event, frame);
       auto frames = notes[event++];
       if(frames>sampleFrames) frames = sampleFrames;
       frames -= frame;
@@ -250,7 +251,6 @@ class Epiano2Client : Client {
           int i = waves[V.pos];
           i = (i << 7) + (V.frac >> 9) * (waves[V.pos + 1] - i) + 0x40400000;
           auto x = V.env * (*cast(float *)&i - 3.0f);  //fast int.float
-          // debugLogf("x %f env %f i %d wav %d", x, V.env, i, waves[V.pos + 1]);
           V.env = V.env * V.dec;  //envelope
 
           if(x>0.0f) { x -= overdrive * x * x;  if(x < -V.env) x = -V.env; } //+= 0.5f * x * x; } //overdrive
@@ -272,16 +272,15 @@ class Epiano2Client : Client {
         outputs[1][index] = r;
         ++index;
       }
-      // debugLogf("out %f %f ... %f %f", outputs[0][0], outputs[1][0],
-      // outputs[0][sampleFrames-1], outputs[1][sampleFrames-1]);
 
       if(frame<sampleFrames) {
-        // TODO
-        // if(activevoices == 0 && programs[curProgram].param[4] > 0.5f)
-        // { lfo0 = -0.7071f;  lfo1 = 0.7071f; } //reset LFO phase - good idea?
+        //reset LFO phase - good idea?
+        if(activevoices == 0 && param(Param.modulation).getNormalized > 0.5f) {
+          lfo0 = -0.7071f;
+          lfo1 = 0.7071f;
+        }
         int note = notes[event++];
         int vel  = notes[event++];
-        // debugLogf("note %d vel %d", note, vel);
         if (vel > 0) noteOn(note, vel);
         else noteOff(note);
       }
@@ -297,7 +296,6 @@ class Epiano2Client : Client {
 
  private:
   void processMidi(int frames) {
-    // debugLogf("processMidi: %d frames", frames);
     int npos = 0;
     foreach (MidiMessage msg; getNextMidiMessages(frames)) {
       if (msg.isNoteOn) {
@@ -308,12 +306,42 @@ class Epiano2Client : Client {
         notes[npos++] = msg.offset;
         notes[npos++] = msg.noteNumber;
         notes[npos++] = 0;
+      } else if (msg.isControlChange) {
+        switch (msg.controlChangeControl) {
+          case MidiControlChange.modWheel:
+            modwhl = msg.controlChangeValue0to1;
+            //over-ride pan/trem depth
+            if(modwhl > 0.05f) {
+              rmod = lmod = modwhl; //lfo depth
+              if(param(Param.modulation).getNormalized < 0.5f) rmod = -rmod;
+            }
+            break;
+          case MidiControlChange.channelVolume:
+            volume = 0.00002f * cast(float) (msg.controlChangeValue * msg.controlChangeValue);
+            break;
+
+          case MidiControlChange.sustainOnOff:
+          case MidiControlChange.sustenutoOnOff:
+            debugLogf("sustain %d", msg.controlChangeValue);
+            sustain = msg.controlChangeValue & 0x44;
+            if (sustain == 0) {
+              notes[npos++] = msg.offset;
+              notes[npos++] = SUSTAIN; //end all sustained notes
+              notes[npos++] = 0;
+            }
+            break;
+          case MidiControlChange.allNotesOff:
+          case MidiControlChange.allSoundsOff:
+            for(int v=0; v<NVOICES; v++) voice[v].dec=0.99f;
+            sustain = 0;
+            muff = 160.0f;
+            break;
+          default:
+            break;
+        }
       }
-      else if (msg.isAllNotesOff || msg.isAllSoundsOff) {
-        for(int v=0; v<NVOICES; v++) voice[v].dec=0.99f;
-        sustain = 0;
-        muff = 160.0f;
-      }
+
+      // TODO support program change.
       if (npos > EVENTBUFFER) npos -= 3; // discard events if buffer full
     }
     notes[npos] = EVENTS_DONE;
@@ -333,17 +361,14 @@ class Epiano2Client : Client {
         if(voice[v].env < l) { l = voice[v].env;  vl = v; }
       }
     }
-    // debugLogf("noteOn using voice %d", vl);
 
     int k = (note - 60) * (note - 60);
     float l = fine + random * (cast(float)(k % 13) - 6.5f);  //random & fine tune
     if(note > 60) l += stretch * cast(float)k; //stretch
 
     k = 0;
-    while(note > (kgrp[k].high + size)) {
-      k += 3;  //find keygroup
-      // debugLogf("noteOn using note %d  kgrp %d high %d", note, k, kgrp[k].high);
-    }
+    while(note > (kgrp[k].high + size)) k += 3;  //find keygroup
+
     l += cast(float)(note - kgrp[k].root); //pitch
     l = 32000.0f * iFs * cast(float)exp(0.05776226505 * l);
     voice[vl].delta = cast(int)(65536.0f * l);
@@ -359,8 +384,7 @@ class Epiano2Client : Client {
 
     if(note > 60) voice[vl].env *= cast(float)exp(0.01f * cast(float)(60 - note)); //new! high notes quieter
 
-    // TODO
-    auto modulation = 0;
+    auto modulation = param(Param.modulation).getNormalized;
     l = 50.0f + modulation * modulation * muff + muffvel * cast(float)(velocity - 64); //muffle
     if(l < (55.0f + 0.4f * cast(float)note)) l = 55.0f + 0.4f * cast(float)note;
     if(l > 210.0f) l = 210.0f;
@@ -373,10 +397,10 @@ class Epiano2Client : Client {
     voice[vl].outr = l + l * width * cast(float)(note - 60);
     voice[vl].outl = l + l - voice[vl].outr;
 
-    if(note < 44) note = 44; //limit max decay length
-    // TODO
-    auto decay = 0.5f;
-    voice[vl].dec = cast(float)exp(-iFs * exp(-1.0 + 0.03 * cast(double)note - 2.0f * decay));
+    auto decayLength = min(note, 44);
+    voice[vl].dec = cast(float) exp(
+        -iFs * exp(-1.0 + 0.03 * cast(double)note
+                   - 2.0f * param(Param.envelopeDecay).getNormalized));
   }
 
   void noteOff(int note) {
@@ -384,9 +408,9 @@ class Epiano2Client : Client {
       //any voices playing that note?
       if(voice[v].note == note) {
         if(sustain == 0) {
-          // TODO
-          auto release = 0f;
-          voice[v].dec = cast(float)exp(-iFs * exp(6.0 + 0.01 * cast(double)note - 5.0 * release));
+          voice[v].dec = cast(float) exp(
+              -iFs * exp(6.0 + 0.01 * cast(double) note -
+                         5.0 * param(Param.envelopeRelease).getNormalized));
         } else voice[v].note = SUSTAIN;
       }
     }
